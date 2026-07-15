@@ -1,12 +1,13 @@
 # Buylist CSV Fixer (Chrome Extension)
 
 A local Chrome extension that:
-- Lets you upload a CSV (click or drag & drop)
-- Renames the `Product ID` column header to `Product_ID`
-- Displays every row's `Quantity` value (next to its `Name`) in the popup
-- Lets you manually clear the displayed values (without losing the loaded file)
-- Re-populates the displayed values automatically whenever you upload a new CSV
-- Lets you download the fixed CSV
+- Lets you add multiple CSVs one at a time (click or drag & drop)
+- Renames the `Product ID` column header to `Product_ID` in each one
+- Merges every file you add into a single combined dataset — matching columns by name, so files don't need identical column order
+- Displays the combined `Quantity` values (next to `Name`) for every row added so far
+- Persists what you've added even if you close and reopen the popup
+- Lets you manually **Clear all** to start over
+- Lets you download everything you've added as one combined CSV
 
 ## Install it locally (Developer Mode)
 
@@ -20,12 +21,10 @@ A local Chrome extension that:
 ## Use it
 
 1. Click the extension icon to open the popup.
-2. Click the dropzone (or drag a `.csv` file onto it) to load your CSV.
-3. The popup will:
-   - Rename `Product ID` → `Product_ID` in the header row
-   - List each row's Quantity value below
-4. Click **Download fixed CSV** to save the corrected file (saved as `<original name>_fixed.csv` via Chrome's normal download flow).
-5. Click **Clear** to wipe the displayed quantity list at any time — uploading a new CSV will repopulate it.
+2. Click the dropzone (or drag a `.csv` file onto it) to add your first CSV. It's fixed (`Product ID` → `Product_ID`) and added to the combined dataset.
+3. Add more CSVs the same way — each one is fixed and appended to the same combined dataset. The "Files added" list shows every file and how many rows it contributed; "Combined quantity values" shows every row added so far.
+4. Click **Download combined CSV** any time to save everything added so far as one file (named `combined_buylist_<date>.csv`).
+5. Click **Clear all** when you want to start fresh — this wipes every file added, all combined rows, and the displayed quantities.
 
 ### Keeping the values visible while you work in another tab
 
@@ -33,7 +32,8 @@ The normal toolbar popup closes the moment you click into another tab — that's
 
 ## Notes
 
-- All processing happens locally in the popup — nothing is uploaded anywhere.
-- The extension requests no special permissions.
+- All processing happens locally in the popup — nothing is uploaded anywhere. The combined dataset is stored locally via `chrome.storage.local` (not synced, not sent anywhere) so it survives closing/reopening the popup.
 - It matches the header `Product ID` case-insensitively (so `product id`, `PRODUCT ID`, etc. also get renamed) and leaves every other column untouched.
-- If your CSV doesn't have a `Product ID` or `Quantity` column, the popup will tell you rather than failing silently.
+- When merging a second (or later) file, columns are matched to the first file's columns **by name**, not position — so if a later CSV has columns in a different order, they'll still land in the right place. Columns that don't exist in the first file's headers are dropped from later files; columns missing from a later file are filled in as blank.
+- The downloaded CSV only quotes fields that need it (commas, quotes, or newlines) and has no BOM — this matches what Shopify's importer expects.
+- If a CSV doesn't have a `Product ID` or `Quantity` column, the popup will tell you rather than failing silently.

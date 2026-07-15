@@ -10,28 +10,34 @@
     <div class="header-row">
       <div>
         <h1>Buylist CSV Fixer</h1>
-        <p class="subtitle">Upload a CSV, rename <code>Product ID</code> → <code>Product_ID</code>, and preview quantities.</p>
+        <p class="subtitle">Add one or more CSVs — each is fixed and merged into one combined file. <code>Product ID</code> → <code>Product_ID</code>.</p>
       </div>
       <button id="popOutBtn" class="pop-out-btn" title="Open in a separate window that stays open">⧉</button>
     </div>
 
     <label class="dropzone" id="dropzone" for="fileInput">
-      <span id="dropzoneText">Click to choose a CSV, or drag &amp; drop it here</span>
+      <span id="dropzoneText">Click to add a CSV, or drag &amp; drop it here</span>
       <input type="file" id="fileInput" accept=".csv" hidden />
     </label>
 
-    <div id="fileInfo" class="file-info hidden"></div>
+    <div class="files-section">
+      <div class="files-header">
+        <h2>Files added</h2>
+        <span id="fileCount" class="badge">0</span>
+      </div>
+      <div id="fileList" class="file-list empty">No CSVs added yet.</div>
+    </div>
 
     <div class="actions">
-      <button id="downloadBtn" disabled>Download fixed CSV</button>
-      <button id="clearBtn" class="secondary" disabled>Clear</button>
+      <button id="downloadBtn" disabled>Download combined CSV</button>
+      <button id="clearBtn" class="secondary" disabled>Clear all</button>
     </div>
 
     <div id="status" class="status"></div>
 
     <div class="quantities-section">
       <div class="quantities-header">
-        <h2>Quantity values</h2>
+        <h2>Combined quantity values</h2>
         <span id="quantityCount" class="badge">0</span>
       </div>
       <div id="quantityList" class="quantity-list empty">

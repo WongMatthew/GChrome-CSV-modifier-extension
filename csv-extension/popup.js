@@ -75,33 +75,64 @@ function parseCSV(text) {
   return rows.filter((r) => !(r.length === 1 && r[0] === ""));
 }
 
-// Serializes rows back into CSV text, quoting every field (matches the
-// original file's formatting, which quotes all fields).
+// Serializes rows back into CSV text. Only quotes a field when it actually
+// needs it (contains a comma, quote, or newline) — matches plain, minimally
+// quoted CSV, which is what Shopify's importer expects.
+function csvEscapeField(value) {
+  const str = String(value);
+  if (/[",\r\n]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
 function toCSV(rows) {
   return rows
-    .map((row) =>
-      row
-        .map((field) => `"${String(field).replace(/"/g, '""')}"`)
-        .join(",")
-    )
+    .map((row) => row.map(csvEscapeField).join(","))
     .join("\r\n");
 }
 
 // ---------- App state ----------
+//
+// The extension now accumulates data across multiple uploaded CSVs into one
+// combined dataset:
+//   - headers: the "master" column list, taken from the first file added
+//   - rows: every data row from every file added so far, reordered to match
+//     `headers` by column NAME (so files with columns in a different order
+//     still merge correctly)
+//   - files: metadata about each file added, for the file list UI
+//
+// State is persisted to chrome.storage.local so it survives closing and
+// reopening the popup — "Clear all" is the only thing that resets it.
 
 let state = {
-  fileName: null,
   headers: [],
   rows: [],
-  fixedCSVText: null,
+  files: [], // { name, rowCount }
 };
+
+const STORAGE_KEY = "combinedCsvState";
+
+function saveState() {
+  chrome.storage.local.set({ [STORAGE_KEY]: state });
+}
+
+function loadState(callback) {
+  chrome.storage.local.get([STORAGE_KEY], (result) => {
+    if (result && result[STORAGE_KEY]) {
+      state = result[STORAGE_KEY];
+    }
+    callback();
+  });
+}
 
 // ---------- DOM references ----------
 
 const dropzone = document.getElementById("dropzone");
 const dropzoneText = document.getElementById("dropzoneText");
 const fileInput = document.getElementById("fileInput");
-const fileInfo = document.getElementById("fileInfo");
+const fileList = document.getElementById("fileList");
+const fileCount = document.getElementById("fileCount");
 const downloadBtn = document.getElementById("downloadBtn");
 const clearBtn = document.getElementById("clearBtn");
 const statusEl = document.getElementById("status");
@@ -198,45 +229,100 @@ function processCSVText(text, fileName) {
     return;
   }
 
-  const headers = rows[0];
+  const rawHeaders = rows[0];
   const dataRows = rows.slice(1);
 
   // Rename "Product ID" -> "Product_ID" (case-insensitive, trims whitespace)
-  const fixedHeaders = headers.map((h) =>
+  const fixedHeaders = rawHeaders.map((h) =>
     h.trim().toLowerCase() === "product id" ? "Product_ID" : h
   );
+  const renamed = fixedHeaders.some((h, idx) => h !== rawHeaders[idx]);
 
-  const renamed = fixedHeaders.some((h, idx) => h !== headers[idx]);
+  if (state.headers.length === 0) {
+    // First file added: it defines the combined header order.
+    state.headers = fixedHeaders;
+    state.rows.push(...dataRows);
+  } else {
+    // Subsequent files: reorder each row to match the master headers by
+    // column NAME, so column order differences between files don't matter.
+    // Columns present in this file but not in the master list are dropped;
+    // columns missing from this file are filled in as "".
+    const indexByName = new Map();
+    fixedHeaders.forEach((h, idx) => {
+      indexByName.set(h.trim().toLowerCase(), idx);
+    });
 
-  const fixedRows = [fixedHeaders, ...dataRows];
-  const fixedCSVText = toCSV(fixedRows);
+    const aligned = dataRows.map((row) =>
+      state.headers.map((masterHeader) => {
+        const srcIdx = indexByName.get(masterHeader.trim().toLowerCase());
+        return srcIdx === undefined ? "" : row[srcIdx] ?? "";
+      })
+    );
+    state.rows.push(...aligned);
+  }
 
-  state = {
-    fileName,
-    headers: fixedHeaders,
-    rows: dataRows,
-    fixedCSVText,
-  };
+  state.files.push({ name: fileName, rowCount: dataRows.length });
+  saveState();
 
-  fileInfo.textContent = `${fileName} — ${dataRows.length} row${
-    dataRows.length === 1 ? "" : "s"
-  } loaded`;
-  fileInfo.classList.remove("hidden");
+  renderFileList();
+  renderQuantities();
 
-  downloadBtn.disabled = false;
-  clearBtn.disabled = false;
-
-  renderQuantities(fixedHeaders, dataRows);
+  downloadBtn.disabled = state.rows.length === 0;
+  clearBtn.disabled = state.files.length === 0;
 
   setStatus(
     renamed
-      ? '"Product ID" renamed to "Product_ID". Ready to download.'
-      : 'No "Product ID" column found — file loaded as-is.',
+      ? `Added "${fileName}" (${dataRows.length} row${
+          dataRows.length === 1 ? "" : "s"
+        }). "Product ID" renamed to "Product_ID".`
+      : `Added "${fileName}" (${dataRows.length} row${
+          dataRows.length === 1 ? "" : "s"
+        }) — no "Product ID" column found.`,
     renamed ? "success" : "error"
   );
+
+  dropzoneText.textContent = "Click to add another CSV, or drag & drop it here";
 }
 
-function renderQuantities(headers, dataRows) {
+function renderFileList() {
+  if (state.files.length === 0) {
+    fileList.innerHTML = "";
+    fileList.classList.add("empty");
+    fileList.textContent = "No CSVs added yet.";
+    fileCount.textContent = "0";
+    return;
+  }
+
+  fileList.classList.remove("empty");
+  fileList.innerHTML = "";
+
+  const frag = document.createDocumentFragment();
+  state.files.forEach((f) => {
+    const rowEl = document.createElement("div");
+    rowEl.className = "file-row";
+
+    const nameEl = document.createElement("span");
+    nameEl.className = "file-name";
+    nameEl.textContent = f.name;
+    nameEl.title = f.name;
+
+    const countEl = document.createElement("span");
+    countEl.className = "file-rows";
+    countEl.textContent = `${f.rowCount} row${f.rowCount === 1 ? "" : "s"}`;
+
+    rowEl.appendChild(nameEl);
+    rowEl.appendChild(countEl);
+    frag.appendChild(rowEl);
+  });
+
+  fileList.appendChild(frag);
+  fileCount.textContent = String(state.files.length);
+}
+
+function renderQuantities() {
+  const headers = state.headers;
+  const dataRows = state.rows;
+
   const qtyIndex = headers.findIndex(
     (h) => h.trim().toLowerCase() === "quantity"
   );
@@ -290,15 +376,16 @@ function renderQuantities(headers, dataRows) {
 }
 
 function downloadFixedCSV() {
-  if (!state.fixedCSVText) return;
+  if (state.rows.length === 0) return;
 
-  const blob = new Blob(["\ufeff" + state.fixedCSVText], {
+  const csvText = toCSV([state.headers, ...state.rows]);
+  const blob = new Blob([csvText], {
     type: "text/csv;charset=utf-8;",
   });
   const url = URL.createObjectURL(blob);
 
-  const baseName = state.fileName.replace(/\.csv$/i, "");
-  const outName = `${baseName}_fixed.csv`;
+  const stamp = new Date().toISOString().slice(0, 10);
+  const outName = `combined_buylist_${stamp}.csv`;
 
   const a = document.createElement("a");
   a.href = url;
@@ -308,21 +395,41 @@ function downloadFixedCSV() {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 
-  setStatus(`Downloaded ${outName}`, "success");
+  setStatus(`Downloaded ${outName} (${state.rows.length} total rows).`, "success");
 }
 
-// Clears only the displayed quantity values (per the "clear displayed
-// values manually" requirement) without discarding the loaded file, so a
-// download is still possible afterward.
+// Clears the entire combined dataset — every file added, all rows, and the
+// displayed quantities. This is the explicit "start over" action.
 function clearAll() {
-  quantityList.innerHTML = "";
-  quantityList.classList.add("empty");
-  quantityList.textContent = "Cleared. Upload a CSV to see values again.";
-  quantityCount.textContent = "0";
-  setStatus("Displayed values cleared.", "success");
+  state = { headers: [], rows: [], files: [] };
+  saveState();
+
+  renderFileList();
+  renderQuantities();
+
+  downloadBtn.disabled = true;
+  clearBtn.disabled = true;
+
+  dropzoneText.textContent = "Click to add a CSV, or drag & drop it here";
+  setStatus("Cleared. All added files and combined rows removed.", "success");
 }
 
 function setStatus(message, kind) {
   statusEl.textContent = message;
   statusEl.className = `status ${kind || ""}`.trim();
 }
+
+// ---------- Init ----------
+// Restore whatever combined dataset was built up in previous popup sessions.
+
+loadState(() => {
+  renderFileList();
+  renderQuantities();
+
+  downloadBtn.disabled = state.rows.length === 0;
+  clearBtn.disabled = state.files.length === 0;
+
+  if (state.files.length > 0) {
+    dropzoneText.textContent = "Click to add another CSV, or drag & drop it here";
+  }
+});

@@ -92,6 +92,69 @@ code {
   display: none !important;
 }
 
+.files-section {
+  margin-top: 12px;
+}
+
+.files-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.files-header h2 {
+  font-size: 13px;
+  margin: 0;
+  color: #f1f5f9;
+}
+
+.file-list {
+  max-height: 110px;
+  overflow-y: auto;
+  background: #1e293b;
+  border-radius: 8px;
+  padding: 6px 0;
+}
+
+.file-list.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 10px;
+  font-size: 12px;
+  color: #64748b;
+  text-align: center;
+}
+
+.file-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid #273449;
+}
+
+.file-row:last-child {
+  border-bottom: none;
+}
+
+.file-row .file-name {
+  color: #cbd5e1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-row .file-rows {
+  color: #93c5fd;
+  font-weight: 600;
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
 .actions {
   display: flex;
   gap: 8px;
